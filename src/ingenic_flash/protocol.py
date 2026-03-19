@@ -103,6 +103,26 @@ def boot_device(
     return dev
 
 
+def _patch_sfc_erase_mode(cfg_bulk: bytes, erase_mode: int) -> bytes:
+    """Patch the spi_erase field in the SFC TLV entry.
+
+    erase_mode: 0 = SPI_NO_ERASE (sector erase per write)
+                1 = SPI_ERASE_PART (full chip erase during init)
+    """
+    data = bytearray(cfg_bulk)
+    off = 0
+    while off < len(data) - 8:
+        magic = struct.unpack("<I", data[off:off+4])[0]
+        size = struct.unpack("<I", data[off+4:off+8])[0]
+        if magic == 0x53464300:  # SFC TLV
+            # spi_param offset 12 = spi_erase field
+            struct.pack_into("<I", data, off + 8 + 12, erase_mode)
+            log.debug("Patched SFC spi_erase to %d", erase_mode)
+            return bytes(data)
+        off += 8 + size
+    return bytes(data)  # no SFC TLV found, return unchanged
+
+
 def flash_firmware(
     dev: USBDevice,
     chip: ChipInfo,
@@ -110,6 +130,7 @@ def flash_firmware(
     fw_dir: Path,
     offset: int = 0,
     reboot: bool = True,
+    erase_all: bool = False,
     progress_cb=None,
 ) -> None:
     """Flash firmware using the full Ingenic Cloner protocol.
@@ -140,10 +161,14 @@ def flash_firmware(
     jedec = dev.stage2_get_flash_info()
     log.info("Flash JEDEC ID: %s", jedec.hex())
 
-    log.info("Sending UPDATE_CFG #2")
+    cfg2_bulk = (fw_dir / "cfg2_bulk.bin").read_bytes()
+    if erase_all:
+        log.info("Sending UPDATE_CFG #2 (chip erase mode)")
+    else:
+        cfg2_bulk = _patch_sfc_erase_mode(cfg2_bulk, 0)  # SPI_NO_ERASE
+        log.info("Sending UPDATE_CFG #2 (sector erase mode)")
     dev.stage2_update_cfg(
-        (fw_dir / "cfg2_ep0.bin").read_bytes(),
-        (fw_dir / "cfg2_bulk.bin").read_bytes())
+        (fw_dir / "cfg2_ep0.bin").read_bytes(), cfg2_bulk)
     ack = struct.unpack("<i", dev.stage2_get_ack())[0]
     if ack != 0:
         raise RuntimeError(f"UPDATE_CFG #2 failed: {ack}")

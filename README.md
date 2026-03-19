@@ -59,6 +59,7 @@ Flash complete!
 Options:
 - `-v` / `-vv` — increase verbosity
 - `--offset 0x40000` — write at a specific flash offset
+- `--erase-all` — full chip erase before writing (default: sector erase only)
 - `--no-reboot` — don't reboot the device after flashing
 
 ### Boot device

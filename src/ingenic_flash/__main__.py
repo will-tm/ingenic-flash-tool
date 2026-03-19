@@ -108,6 +108,7 @@ def cmd_flash(args: argparse.Namespace) -> int:
             fw_dir=fw_dir,
             offset=_parse_addr(args.offset) if args.offset else 0,
             reboot=not args.no_reboot,
+            erase_all=args.erase_all,
             progress_cb=_progress_bar,
         )
         print("Flash complete!")
@@ -185,6 +186,7 @@ def main() -> int:
     p_flash.add_argument("firmware", help="Path to firmware image to flash")
     p_flash.add_argument("--offset", default="0", help="Flash offset (hex or decimal)")
     p_flash.add_argument("--no-reboot", action="store_true", help="Don't reboot after flashing")
+    p_flash.add_argument("--erase-all", action="store_true", help="Full chip erase before writing (default: sector erase)")
 
     args = parser.parse_args()
 
