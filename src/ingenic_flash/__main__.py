@@ -42,7 +42,7 @@ def cmd_detect(args: argparse.Namespace) -> int:
         print(f"  Known PIDs: {', '.join(f'0x{p:04x} ({n})' for p, n in USB_PIDS.items())}")
         return 1
 
-    print(f"Device found!")
+    print("Device found!")
     print(f"  USB PID:  0x{dev.pid:04x} ({dev.pid_name})")
     try:
         with dev:
@@ -50,7 +50,7 @@ def cmd_detect(args: argparse.Namespace) -> int:
         print(f"  CPU info: {cpu_info} (hex: {cpu_info.hex()})")
     except Exception as e:
         print(f"  CPU info: failed ({e})")
-        print(f"  Device may need to be power-cycled.")
+        print("  Device may need to be power-cycled.")
     return 0
 
 

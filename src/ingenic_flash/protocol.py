@@ -23,7 +23,6 @@ import logging
 import struct
 import time
 from pathlib import Path
-from typing import Optional
 
 from .chips import ChipInfo
 from .usb import USBDevice

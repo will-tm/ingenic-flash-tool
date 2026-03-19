@@ -1,6 +1,5 @@
 """Low-level USB communication with Ingenic SoCs in boot mode."""
 
-import time
 from typing import Optional
 
 import usb.core
