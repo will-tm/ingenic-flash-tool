@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ingenic-flash-tool"
+version = "0.1.0"
+description = "Lightweight CLI tool for flashing Ingenic SoCs via USB boot mode"
+requires-python = ">=3.10"
+license = "MIT"
+readme = "README.md"
+dependencies = [
+    "pyusb>=1.2.0",
+]
+
+[project.urls]
+Repository = "https://github.com/will-tm/ingenic-flash-tool"
+
+[project.scripts]
+ingenic-flash-tool = "ingenic_flash.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ingenic_flash = ["firmware/**/*.bin", "firmware/**/*.cfg"]
