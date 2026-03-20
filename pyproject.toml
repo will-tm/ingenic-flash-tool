@@ -23,4 +23,4 @@ ingenic-flash-tool = "ingenic_flash.__main__:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-ingenic_flash = ["firmware/**/*.bin", "firmware/**/*.cfg"]
+ingenic_flash = ["firmware/**/*.bin", "firmware/**/*.cfg", "firmware/*.cfg"]

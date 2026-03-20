@@ -1,6 +1,6 @@
-"""Ingenic USB Cloner protocol implementation.
+"""Ingenic USB boot and flash protocol implementation.
 
-Complete protocol reverse-engineered from USB capture of the Ingenic Cloner tool.
+Reverse-engineered protocol for flashing Ingenic SoCs via USB boot mode.
 
 Boot sequence (ROM → SPL → Stage2):
   1. Boot ROM: load ginfo + SPL via SET_ADDR/SET_LEN/bulk/PROGRAM_START1
@@ -132,7 +132,7 @@ def flash_firmware(
     erase_all: bool = False,
     progress_cb=None,
 ) -> None:
-    """Flash firmware using the full Ingenic Cloner protocol.
+    """Flash firmware via the Ingenic USB boot protocol.
 
     fw_dir must contain: ginfo.bin, spl.bin, uboot.bin,
     cfg1_ep0.bin, cfg1_bulk.bin, cfg2_ep0.bin, cfg2_bulk.bin
@@ -157,14 +157,15 @@ def flash_firmware(
     if ack != 0:
         raise RuntimeError(f"UPDATE_CFG #1 failed: {ack}")
 
-    jedec = dev.stage2_get_flash_info()
-    log.info("Flash JEDEC ID: %s", jedec.hex())
+    jedec_raw = dev.stage2_get_flash_info()
+    jedec_id = (jedec_raw[2] << 16) | (jedec_raw[1] << 8) | jedec_raw[0]
+    log.info("Flash JEDEC ID: 0x%06x (%s)", jedec_id, jedec_raw.hex())
 
     cfg2_bulk = (fw_dir / "cfg2_bulk.bin").read_bytes()
     if erase_all:
         log.info("Sending UPDATE_CFG #2 (chip erase mode)")
     else:
-        cfg2_bulk = _patch_sfc_erase_mode(cfg2_bulk, 0)  # SPI_NO_ERASE
+        cfg2_bulk = _patch_sfc_erase_mode(cfg2_bulk, 0)
         log.info("Sending UPDATE_CFG #2 (sector erase mode)")
     dev.stage2_update_cfg(
         (fw_dir / "cfg2_ep0.bin").read_bytes(), cfg2_bulk)

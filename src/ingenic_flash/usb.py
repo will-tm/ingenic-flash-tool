@@ -19,7 +19,7 @@ VR_FLUSH_CACHES = 0x03
 VR_PROGRAM_START1 = 0x04
 VR_PROGRAM_START2 = 0x05
 
-# Stage2 (cloner/burner) vendor requests
+# Stage2 (burner) vendor requests
 VR_GET_ACK = 0x10
 VR_INIT = 0x11
 VR_WRITE = 0x12

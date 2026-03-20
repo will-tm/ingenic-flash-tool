@@ -1,6 +1,6 @@
 # ingenic-flash-tool
 
-Lightweight Python CLI tool for flashing Ingenic T-series SoCs (T20/T21/T23/T30/T31/T40/T41) via USB boot mode. Drop-in replacement for the proprietary Ingenic USB Cloner GUI tool.
+Lightweight Python CLI tool for flashing Ingenic T-series SoCs (T20/T21/T23/T30/T31/T40/T41) via USB boot mode.
 
 ## Installation
 
@@ -39,18 +39,15 @@ Device found!
 Flash a firmware image to SPI NOR flash:
 
 ```
-$ ingenic-flash-tool flash prj008 firmware.bin
+$ ingenic-flash-tool -v flash prj008 firmware.bin
 INFO: Boot ROM CPU info: 5420332031205620
 INFO: Loading ginfo (324 bytes) to 0x80001000
 INFO: Loading SPL (32384 bytes) to 0x80001800
-INFO: Starting SPL: SET_DATA_LEN(0x7000) + START1(0x80001800)
 INFO: SPL running: 5420332031205620
 INFO: Loading stage2 (417656 bytes) to 0x80100000
-INFO: Executing stage2: FLUSH_CACHES + PROGRAM_START2
 INFO: Stage2 running: b'PRJ\x00\x00\x00\x00\x00'
-INFO: Flash JEDEC ID: 1870ef
-INFO: Initializing flash (chip erase)...
-INFO: Flash init complete (14s)
+INFO: Flash JEDEC ID: 0xef7018 (W25Q128JVSM, 16384KB)
+INFO: Initializing flash...
 INFO: Writing 232652 bytes (227K) at offset 0x0
   [########################################] 100% (232652/232652)
 Flash complete!
@@ -76,7 +73,6 @@ Device booted into stage2: b'PRJ\x00\x00\x00\x00\x00' (50524a0000000000)
 ```
 $ ingenic-flash-tool info
 Supported chips:
-  jz4775      PID=0x4775  ginfo=0xf4000800
   prj008      PID=0xc309  ginfo=0x80001000 [bundled]
   t20         PID=0xc309  ginfo=0x80001000 [bundled]
   t21         PID=0xc309  ginfo=0x80001000 [bundled]
@@ -97,18 +93,19 @@ USB PID:     0xc309
 |------------|------|-------|-------|
 | PRJ008     | Yes  | Yes   | Full support (T31/T33 camera board, SPI NOR) |
 | T20–T41    | Yes  | No    | Boot only — need board-specific ginfo + config |
+| 40 chips   | Yes  | —     | All Ingenic SoCs with bundled SPL/U-Boot |
 
-Full flash support requires board-specific firmware files (`ginfo.bin`, `spl.bin`, `uboot.bin`, and config blobs) captured from a working Ingenic USB Cloner session. The PRJ008 board files are bundled.
+Full flash support requires board-specific firmware files (`ginfo.bin`, `spl.bin`, `uboot.bin`). The flash configuration is auto-generated from the detected flash JEDEC ID using a built-in database of 55+ SPI flash chips.
 
 ## How It Works
 
-The tool implements the Ingenic USB Cloner protocol, reverse-engineered from USB packet captures:
+The tool implements the Ingenic USB boot protocol, reverse-engineered from USB packet captures:
 
 1. **Boot ROM** — The SoC enters USB boot mode. The tool sends a DDR configuration block (ginfo) and first-stage bootloader (SPL) via vendor USB requests.
 
 2. **SPL** — The SPL initializes DDR memory, then stays resident and re-implements USB. It does **not** return to the boot ROM. The tool sends the stage2 burner firmware (U-Boot) via the SPL's USB interface.
 
-3. **Stage2 Burner** — A specialized U-Boot build that handles flash operations. The tool sends board configuration, triggers chip erase, then writes firmware in 64KB chunks with CRC verification.
+3. **Stage2 Burner** — A specialized U-Boot build that handles flash operations. The tool auto-detects the flash chip via JEDEC ID, sends board configuration, then writes firmware in 64KB chunks with CRC verification.
 
 ### Protocol details
 
