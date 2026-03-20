@@ -36,6 +36,11 @@ EP_IN = 0x81
 CTRL_TIMEOUT = 5000
 BULK_TIMEOUT = 30000
 
+# Per-chunk write ACK can take time (sector erase + program + verify)
+# ~300ms erase + ~200ms program + ~100ms verify per 32KB sector = ~600ms
+# A 64KB chunk spans 2 sectors = ~1.2s typical, but slow flash can be 3-5x
+WRITE_ACK_TIMEOUT = 30000  # 30s per 64KB chunk (generous for slow flash)
+
 
 def _split_addr(addr: int) -> tuple[int, int]:
     """Split a 32-bit address into (wValue, wIndex) for control transfers."""
@@ -122,10 +127,12 @@ class USBDevice:
     # --- Bulk transfers ---
 
     def bulk_write(self, data: bytes | bytearray, chunk_size: int = 65536) -> None:
+        # Scale timeout: 30s base + 1s per 64KB (covers slow USB + large transfers)
+        timeout = BULK_TIMEOUT + (len(data) // 65536) * 1000
         offset = 0
         while offset < len(data):
             end = min(offset + chunk_size, len(data))
-            written = self._dev.write(EP_OUT, data[offset:end], timeout=BULK_TIMEOUT)
+            written = self._dev.write(EP_OUT, data[offset:end], timeout=timeout)
             if written <= 0:
                 raise IOError(f"Bulk write failed at offset {offset}")
             offset += written

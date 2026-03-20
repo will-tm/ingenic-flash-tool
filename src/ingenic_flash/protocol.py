@@ -172,11 +172,20 @@ def flash_firmware(
     if ack != 0:
         raise RuntimeError(f"UPDATE_CFG #2 failed: {ack}")
 
-    # Init (triggers chip erase)
-    log.info("Initializing flash (chip erase)...")
+    # Init (triggers chip erase if --erase-all)
+    fw_data = firmware_path.read_bytes()
+    total = len(fw_data)
+
+    if erase_all:
+        log.info("Initializing flash (chip erase)...")
+    else:
+        log.info("Initializing flash...")
     dev._dev.ctrl_transfer(0x40, 0x11, 0, 0, b"", timeout=5000)
 
-    for attempt in range(60):
+    # Poll ACK — chip erase can take 15-120s depending on flash size
+    # Scale max wait: 30s base + 1s per 64KB of firmware
+    max_polls = max(30, 15 + total // 65536)
+    for attempt in range(max_polls):
         time.sleep(2)
         try:
             ack = struct.unpack("<i", dev.stage2_get_ack())[0]
@@ -193,8 +202,6 @@ def flash_firmware(
         raise RuntimeError("Flash init timed out")
 
     # Set total firmware size
-    fw_data = firmware_path.read_bytes()
-    total = len(fw_data)
     dev.set_data_length(total)
     log.info("Writing %d bytes (%dK) at offset 0x%x", total, total // 1024, offset)
 
@@ -211,7 +218,12 @@ def flash_firmware(
 
         dev._dev.ctrl_transfer(0x40, 0x12, 0, 0, write_cmd, timeout=5000)
         dev.bulk_write(chunk)
-        ack = struct.unpack("<i", dev.stage2_get_ack())[0]
+        # ACK timeout scales with chunk size: sector erase + program + verify
+        # ~1-2s typical per 64KB, up to 10s on slow flash, 30s safety margin
+        ack_timeout = max(10000, len(chunk) // 32 * 1000)  # ~1s per 32KB, min 10s
+        ack = struct.unpack("<i", bytes(
+            dev._dev.ctrl_transfer(0xC0, 0x10, 0, 0, 4, timeout=ack_timeout)
+        ))[0]
 
         sent += len(chunk)
         if ack != 0:
