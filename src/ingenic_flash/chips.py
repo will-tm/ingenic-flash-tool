@@ -55,6 +55,7 @@ CHIPS = {
     "prj007":     ChipInfo("PRJ007", *_T_SERIES),
     "prj007_sfc1": ChipInfo("PRJ007_SFC1", *_T_SERIES),
     "prj008":     ChipInfo("PRJ008", *_T_SERIES),
+    "prj008_mmc0": ChipInfo("PRJ008_MMC0", *_T_SERIES),
     # AD/C series
     "ad100":     ChipInfo("AD100", *_T_SERIES),
     "c100":      ChipInfo("C100", *_T_SERIES),

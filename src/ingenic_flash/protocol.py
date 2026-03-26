@@ -206,8 +206,17 @@ def flash_firmware(
     dev.set_data_length(total)
     log.info("Writing %d bytes (%dK) at offset 0x%x", total, total // 1024, offset)
 
-    # Write in 64KB chunks
-    ops = 0x00060000  # SPISFC | SFC_NOR
+    # Detect flash type from firmware directory name
+    fw_dir_name = fw_dir.name.lower()
+    if "mmc0" in fw_dir_name:
+        ops = 0x00020000  # MMC slot 0
+    elif "mmc1" in fw_dir_name:
+        ops = 0x00020001  # MMC slot 1
+    elif "nand" in fw_dir_name:
+        ops = 0x00060001  # SPISFC | SFC_NAND
+    else:
+        ops = 0x00060000  # SPISFC | SFC_NOR (default)
+    log.debug("Flash ops: 0x%06x", ops)
     sent = 0
     while sent < total:
         chunk = fw_data[sent:sent + 65536]

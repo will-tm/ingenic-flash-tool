@@ -1,6 +1,6 @@
 # ingenic-flash-tool
 
-Lightweight Python CLI tool for flashing Ingenic T-series SoCs (T20/T21/T23/T30/T31/T40/T41) via USB boot mode.
+Lightweight Python CLI tool for flashing Ingenic T-series SoCs (T20/T21/T23/T30/T31/T40/T41) via USB boot mode. Supports SPI NOR flash and eMMC.
 
 ## Installation
 
@@ -25,8 +25,6 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 
 ### Detect device
 
-Check if an Ingenic device is connected in USB boot mode:
-
 ```
 $ ingenic-flash-tool detect
 Device found!
@@ -34,9 +32,7 @@ Device found!
   CPU info: b'T 3 1 V ' (hex: 5420332031205620)
 ```
 
-### Flash firmware
-
-Flash a firmware image to SPI NOR flash:
+### Flash SPI NOR
 
 ```
 $ ingenic-flash-tool -v flash prj008 firmware.bin
@@ -46,22 +42,34 @@ INFO: Loading SPL (32384 bytes) to 0x80001800
 INFO: SPL running: 5420332031205620
 INFO: Loading stage2 (417656 bytes) to 0x80100000
 INFO: Stage2 running: b'PRJ\x00\x00\x00\x00\x00'
-INFO: Flash JEDEC ID: 0xef7018 (W25Q128JVSM, 16384KB)
+INFO: Flash JEDEC ID: 0xef7018
 INFO: Initializing flash...
 INFO: Writing 232652 bytes (227K) at offset 0x0
   [########################################] 100% (232652/232652)
 Flash complete!
 ```
 
-Options:
+### Flash eMMC
+
+```
+$ ingenic-flash-tool -v flash prj008_mmc0 firmware.bin
+INFO: Stage2 running: b'PRJ\x00\x00\x00\x00\x00'
+INFO: Initializing flash...
+INFO: Writing 232652 bytes (227K) at offset 0x0
+  [########################################] 100% (232652/232652)
+Flash complete!
+```
+
+### Options
+
 - `-v` / `-vv` — increase verbosity
 - `--offset 0x40000` — write at a specific flash offset
-- `--erase-all` — full chip erase before writing (default: sector erase only)
+- `--erase-all` — full chip erase before writing (SPI NOR only, default: sector erase)
 - `--no-reboot` — don't reboot the device after flashing
 
 ### Boot device
 
-Boot the device into the stage2 burner without flashing (useful for debugging):
+Boot into stage2 burner without flashing (useful for debugging):
 
 ```
 $ ingenic-flash-tool boot prj008
@@ -74,28 +82,21 @@ Device booted into stage2: b'PRJ\x00\x00\x00\x00\x00' (50524a0000000000)
 $ ingenic-flash-tool info
 Supported chips:
   prj008      PID=0xc309  ginfo=0x80001000 [bundled]
+  prj008_mmc0 PID=0xc309  ginfo=0x80001000 [bundled]
   t20         PID=0xc309  ginfo=0x80001000 [bundled]
-  t21         PID=0xc309  ginfo=0x80001000 [bundled]
   ...
-
-$ ingenic-flash-tool info --chip prj008
-Chip:        PRJ008 [bundled]
-ginfo addr:  0x80001000
-SPL addr:    0x80001800
-Stage2 addr: 0x80100000
-d2i_len:     0x7000
-USB PID:     0xc309
 ```
 
 ## Supported Hardware
 
-| Chip/Board | Boot | Flash | Notes |
-|------------|------|-------|-------|
-| PRJ008     | Yes  | Yes   | Full support (T31/T33 camera board, SPI NOR) |
-| T20–T41    | Yes  | No    | Boot only — need board-specific ginfo + config |
-| 40 chips   | Yes  | —     | All Ingenic SoCs with bundled SPL/U-Boot |
+| Board/Target   | Flash Type | Status |
+|----------------|------------|--------|
+| prj008         | SPI NOR    | Full support (T31/T33 camera board) |
+| prj008_mmc0    | eMMC/SD    | Full support (MSC0 slot) |
+| T20–T41        | —          | Boot only (need board-specific ginfo + config) |
+| 40+ chips      | —          | Bundled SPL/U-Boot for all Ingenic SoCs |
 
-Full flash support requires board-specific firmware files (`ginfo.bin`, `spl.bin`, `uboot.bin`). The flash configuration is auto-generated from the detected flash JEDEC ID using a built-in database of 55+ SPI flash chips.
+Full flash support requires board-specific firmware files (`ginfo.bin`, `spl.bin`, `uboot.bin`, and config blobs). PRJ008 files are bundled for both SPI NOR and eMMC.
 
 ## How It Works
 
@@ -105,7 +106,7 @@ The tool implements the Ingenic USB boot protocol, reverse-engineered from USB p
 
 2. **SPL** — The SPL initializes DDR memory, then stays resident and re-implements USB. It does **not** return to the boot ROM. The tool sends the stage2 burner firmware (U-Boot) via the SPL's USB interface.
 
-3. **Stage2 Burner** — A specialized U-Boot build that handles flash operations. The tool auto-detects the flash chip via JEDEC ID, sends board configuration, then writes firmware in 64KB chunks with CRC verification.
+3. **Stage2 Burner** — A specialized U-Boot build that handles flash operations. The tool sends board configuration, then writes firmware in 64KB chunks with CRC verification. Supports SPI NOR (with JEDEC auto-detection), SPI NAND, and eMMC/SD.
 
 ### Protocol details
 
