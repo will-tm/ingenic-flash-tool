@@ -168,13 +168,42 @@ class USBDevice:
             pass  # device reboots immediately
 
 
-def find_device(vid: int = INGENIC_VID, pid: Optional[int] = None) -> Optional[USBDevice]:
-    """Find an Ingenic device in USB boot mode."""
-    if pid is not None:
-        dev = usb.core.find(idVendor=vid, idProduct=pid)
-        return USBDevice(dev) if dev else None
-    for known_pid in USB_PIDS:
-        dev = usb.core.find(idVendor=vid, idProduct=known_pid)
+def find_device(
+    vid: int = INGENIC_VID,
+    pid: Optional[int] = None,
+    wait: float = 0.0,
+    poll_interval: float = 0.5,
+    on_wait=None,
+) -> Optional[USBDevice]:
+    """Find an Ingenic device in USB boot mode.
+
+    If wait > 0 and no device is present, poll every poll_interval seconds
+    until a device appears or wait seconds elapse. on_wait(elapsed, total)
+    is called each poll when still waiting.
+    """
+    import time
+
+    def _probe():
+        if pid is not None:
+            d = usb.core.find(idVendor=vid, idProduct=pid)
+            return USBDevice(d) if d else None
+        for known_pid in USB_PIDS:
+            d = usb.core.find(idVendor=vid, idProduct=known_pid)
+            if d is not None:
+                return USBDevice(d)
+        return None
+
+    dev = _probe()
+    if dev is not None or wait <= 0:
+        return dev
+    deadline = time.monotonic() + wait
+    while True:
+        elapsed = wait - (deadline - time.monotonic())
+        if on_wait:
+            on_wait(elapsed, wait)
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(poll_interval)
+        dev = _probe()
         if dev is not None:
-            return USBDevice(dev)
-    return None
+            return dev

@@ -89,7 +89,13 @@ def cmd_flash(args: argparse.Namespace) -> int:
         print(str(e), file=sys.stderr)
         return 1
 
-    dev = find_device()
+    def _wait_msg(elapsed, total):
+        sys.stderr.write(f"\rWaiting for device... {int(elapsed)}s/{int(total)}s")
+        sys.stderr.flush()
+
+    dev = find_device(wait=args.wait, on_wait=_wait_msg if args.wait > 0 else None)
+    if args.wait > 0:
+        sys.stderr.write("\r" + " " * 40 + "\r")
     if dev is None:
         print("No Ingenic device found in USB boot mode.", file=sys.stderr)
         return 1
@@ -187,6 +193,7 @@ def main() -> int:
     p_flash.add_argument("--offset", default="0", help="Flash offset (hex or decimal)")
     p_flash.add_argument("--no-reboot", action="store_true", help="Don't reboot after flashing")
     p_flash.add_argument("--erase-all", action="store_true", help="Full chip erase before writing (default: sector erase)")
+    p_flash.add_argument("--wait", type=float, default=15.0, help="Seconds to wait for device to appear (default: 15)")
 
     args = parser.parse_args()
 
