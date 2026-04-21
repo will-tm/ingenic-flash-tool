@@ -44,13 +44,32 @@ def find_firmware_dir(chip_name: str) -> Path:
     )
 
 
+def _wait_for_cpu_info(dev: USBDevice, max_wait: float, what: str) -> bytes:
+    """Poll GET_CPU_INFO until the device answers or max_wait elapses.
+
+    Used after PROGRAM_START1/2 to detect when the next stage (SPL or
+    stage2 burner) has come up and is ready to handle USB requests,
+    instead of sleeping a fixed duration.
+    """
+    import usb.core  # noqa: PLC0415
+    deadline = time.monotonic() + max_wait
+    last_err: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            return dev.get_cpu_info()
+        except (usb.core.USBError, OSError) as e:
+            last_err = e
+            time.sleep(0.1)
+    raise TimeoutError(f"{what} did not respond within {max_wait:.1f}s ({last_err})")
+
+
 def boot_device(
     dev: USBDevice,
     chip: ChipInfo,
     ginfo_path: Path,
     spl_path: Path,
     stage2_path: Path,
-    wait_time: float = 3.0,
+    wait_time: float = 10.0,
 ) -> USBDevice:
     """Execute the full two-stage boot sequence.
 
@@ -79,10 +98,10 @@ def boot_device(
     dev.set_data_length(chip.d2i_len)
     dev.program_start1(chip.spl_addr)
 
-    log.info("Waiting %.1fs for SPL to init DDR + USB...", wait_time)
-    time.sleep(wait_time)
-    info = dev.get_cpu_info()
-    log.info("SPL running: %s", info.hex())
+    log.info("Waiting up to %.1fs for SPL to init DDR + USB...", wait_time)
+    t0 = time.monotonic()
+    info = _wait_for_cpu_info(dev, wait_time, "SPL")
+    log.info("SPL running: %s (took %.1fs)", info.hex(), time.monotonic() - t0)
 
     # Stage 2: load burner into DRAM via SPL
     log.info("Loading stage2 (%d bytes) to 0x%08x", len(stage2_data), chip.stage2_addr)
@@ -94,10 +113,10 @@ def boot_device(
     dev.flush_caches()
     dev.program_start2(chip.stage2_addr)
 
-    log.info("Waiting %.1fs for stage2...", wait_time)
-    time.sleep(wait_time)
-    info = dev.get_cpu_info()
-    log.info("Stage2 running: %s (%s)", info, info.hex())
+    log.info("Waiting up to %.1fs for stage2...", wait_time)
+    t0 = time.monotonic()
+    info = _wait_for_cpu_info(dev, wait_time, "stage2 burner")
+    log.info("Stage2 running: %s (%s) (took %.1fs)", info, info.hex(), time.monotonic() - t0)
 
     return dev
 
