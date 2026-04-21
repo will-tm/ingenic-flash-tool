@@ -162,6 +162,22 @@ def flash_firmware(
     log.info("Flash JEDEC ID: 0x%06x (%s)", jedec_id, jedec_raw.hex())
 
     cfg2_bulk = (fw_dir / "cfg2_bulk.bin").read_bytes()
+
+    # Auto-patch cfg2 with the live chip's parameters from the bundled DB.
+    # Lets one board firmware bundle support any SPI NOR in spiflashinfo.cfg
+    # without per-chip variants (e.g. prj008_32m). For >16 MB chips the patcher
+    # also substitutes dedicated 4-byte opcodes so the chip stays in 3-byte
+    # mode and warm-reboot reads cleanly.
+    from .spiflash_db import lookup_chip, patch_cfg2
+    chip_def = lookup_chip(jedec_id)
+    if chip_def is not None:
+        log.info("Recognized %s (%d MB) from chip database",
+                 chip_def.name, chip_def.size // (1024 * 1024))
+        cfg2_bulk = patch_cfg2(cfg2_bulk, chip_def)
+    else:
+        log.warning("JEDEC 0x%06x not in chip database — using bundled cfg as-is",
+                    jedec_id)
+
     if erase_all:
         log.info("Sending UPDATE_CFG #2 (chip erase mode)")
     else:

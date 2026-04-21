@@ -7,3 +7,4 @@ build/
 .venv/
 *.so
 .eggs/
+.select_path.ini
