@@ -140,6 +140,9 @@ def lookup_chip(jedec: int) -> Optional[ChipParams]:
 
 # === Patcher ================================================================
 
+_SFC_ERASE_TIMEOUT = 0x0e8        # u32, WIP-poll loop cap in SFC TLV header
+_SFC_ERASE_TIMEOUT_VAL = 0xf4240  # ~10 s at ~10 µs/tick
+
 # Field offsets within cfg2_bulk.bin's primary chip entry (validated against
 # prj008/cfg2_bulk.bin's W25Q128JVSM @ 0xef7018).
 _PRI_NAME = 0x0f4         # 32 bytes, NUL-padded
@@ -230,6 +233,10 @@ def patch_cfg2(
                if force_4byte_dedicated else chip.opcodes)
 
     data = bytearray(cfg2_bulk)
+
+    # Override the SFC erase busy-wait cap so the WIP bit — not this
+    # counter — decides when the erase is done.
+    struct.pack_into("<I", data, _SFC_ERASE_TIMEOUT, _SFC_ERASE_TIMEOUT_VAL)
 
     # Primary chip entry
     name = chip.name.encode("ascii", errors="replace").ljust(32, b"\x00")[:32]
