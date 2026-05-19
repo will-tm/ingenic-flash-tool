@@ -33,13 +33,15 @@ EP_OUT = 0x01
 EP_IN = 0x81
 
 # Timeouts (ms)
-CTRL_TIMEOUT = 5000
-BULK_TIMEOUT = 30000
+CTRL_TIMEOUT = 20000
+BULK_TIMEOUT = 120000
 
 # Per-chunk write ACK can take time (sector erase + program + verify)
 # ~300ms erase + ~200ms program + ~100ms verify per 32KB sector = ~600ms
-# A 64KB chunk spans 2 sectors = ~1.2s typical, but slow flash can be 3-5x
-WRITE_ACK_TIMEOUT = 30000  # 30s per 64KB chunk (generous for slow flash)
+# A 64KB chunk spans 2 sectors = ~1.2s typical, but slow flash can be 3-5x.
+# Full-chip erase (--erase-all) before the first write can stall the bus
+# for tens of seconds before any ACK comes back.
+WRITE_ACK_TIMEOUT = 120000  # 120s per 64KB chunk (covers --erase-all stall)
 
 
 def _split_addr(addr: int) -> tuple[int, int]:

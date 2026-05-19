@@ -170,13 +170,21 @@ OP_READ, OP_FAST_READ, OP_PAGE_PROG, OP_QUAD_PP, OP_ERASE, OP_WREN, OP_ENTER_4B 
 
 # Dedicated 4-byte-address opcodes (per common Winbond/Boya/GigaDevice 256+ Mbit
 # datasheets). Used to address >16 MB without entering 4-byte mode.
+#
+# Caveat: 0x5C (BLOCK_ERASE_32K_4B) is present here because some chips
+# (GD25B512ME, MT35XU512ABA) declare it natively in spiflashinfo.cfg, but
+# it is NOT supported across all vendors (Winbond W25Q256/512 and Boya
+# BY25Q256 silently NOP it). If a DB entry has OP_ERASE=0x52 with addr=4
+# and the chip doesn't actually implement 0x5C, replace OP_ERASE with
+# 0xd8 (64K block, mapped to 0xdc) and set erase_size=65536 — see the
+# W25Q512JV entry for the canonical fix.
 _DEDICATED_4B = {
     0x03: 0x13,  # READ → READ4B
     0x0b: 0x0c,  # FAST_READ → FAST_READ4B
     0x6b: 0x6c,  # FAST_READ_QUAD → FAST_READ_QUAD4B
     0x02: 0x12,  # PAGE_PROGRAM → PAGE_PROGRAM4B
     0x32: 0x34,  # QUAD_PAGE_PROGRAM → QUAD_PP4B
-    0x52: 0x5c,  # BLOCK_ERASE_32K → BLOCK_ERASE_32K_4B
+    0x52: 0x5c,  # BLOCK_ERASE_32K → BLOCK_ERASE_32K_4B (not universally supported, see above)
     0xd8: 0xdc,  # BLOCK_ERASE_64K → BLOCK_ERASE_64K_4B
     0x20: 0x21,  # SECTOR_ERASE_4K → SECTOR_ERASE_4K_4B
 }

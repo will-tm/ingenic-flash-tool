@@ -6,6 +6,7 @@ import logging
 import sys
 from pathlib import Path
 
+from . import usb as _usb
 from .chips import CHIPS, INGENIC_VID, USB_PIDS, chip_by_name
 from .usb import find_device
 
@@ -172,6 +173,14 @@ def main() -> int:
         "-v", "--verbose", action="count", default=0,
         help="Increase verbosity (-v info, -vv debug)",
     )
+    parser.add_argument(
+        "--timeout", type=float, default=None, metavar="SECONDS",
+        help=(
+            "Override USB bulk-transfer and per-chunk write-ACK timeouts (default: "
+            f"bulk={_usb.BULK_TIMEOUT // 1000}s, write-ack={_usb.WRITE_ACK_TIMEOUT // 1000}s). "
+            "Increase if you hit USBTimeoutError on slow hubs or during --erase-all."
+        ),
+    )
 
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -196,6 +205,11 @@ def main() -> int:
     p_flash.add_argument("--wait", type=float, default=15.0, help="Seconds to wait for device to appear (default: 15)")
 
     args = parser.parse_args()
+
+    if args.timeout is not None:
+        timeout_ms = int(args.timeout * 1000)
+        _usb.BULK_TIMEOUT = timeout_ms
+        _usb.WRITE_ACK_TIMEOUT = timeout_ms
 
     level = logging.WARNING
     if args.verbose >= 2:
