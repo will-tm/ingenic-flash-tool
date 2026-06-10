@@ -66,6 +66,22 @@ Flash complete!
 - `--offset 0x40000` — write at a specific flash offset
 - `--erase-all` — full chip erase before writing (SPI NOR only, default: sector erase)
 - `--no-reboot` — don't reboot the device after flashing
+- `--timeout SECONDS` — override USB bulk-transfer and write-ACK timeouts (default: 120s)
+- `--gpio PORT STATE` — drive a GPIO pin via the boot ROM before SPL load (repeatable, see below)
+
+### GPIO control
+
+The `--gpio` flag drives GPIO pins while still in boot-ROM mode — the earliest reachable point in a USB-boot session. This is useful for asserting the PMIC power-hold line so the board stays alive without the operator holding the power button:
+
+```
+$ ingenic-flash-tool -v flash prj008 firmware.bin --gpio PB15 on
+```
+
+PORT is `PA0`–`PD31` (the `P` prefix is optional). STATE is `on`/`off` (also accepts `high`/`low`, `1`/`0`). Repeat the flag for multiple pins:
+
+```
+$ ingenic-flash-tool flash prj008 firmware.bin --gpio PB15 on --gpio PC20 off
+```
 
 ### Boot device
 

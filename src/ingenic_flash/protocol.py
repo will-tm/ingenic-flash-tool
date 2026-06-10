@@ -30,6 +30,56 @@ from .usb import USBDevice
 log = logging.getLogger(__name__)
 
 
+# Ingenic GPIO controller, uncached KSEG1 mapping of physical 0x10010000.
+# Ports are 0x1000 apart: PA=0x0000, PB=0x1000, PC=0x2000, PD=0x3000.
+# Register offsets within a port (write-1-to-act set/clear pairs), matching
+# the U-Boot board_early_init_f() sequence in the firmware tree:
+#   PXINTC  0x18  - GPIO (vs device) function
+#   PXMSKS  0x24  - GPIO active (vs interrupt)
+#   PXPAT1C 0x38  - output mode
+#   PXPAT0S 0x44 / PXPAT0C 0x48  - drive high / low
+#   PXPUENC 0x118 - pull-up disable
+#   PXPDENS 0x124 / PXPDENC 0x128 - pull-down enable / disable
+GPIO_BASE = 0xB0010000
+
+
+def _poke32(dev: USBDevice, addr: int, value: int) -> None:
+    """Write one 32-bit word to an arbitrary address via the boot ROM.
+
+    Reuses the boot ROM's download primitive (SET_ADDR + SET_LEN + bulk).
+    Only valid while the device is still in boot-ROM mode, before SPL load.
+    """
+    dev.set_data_address(addr)
+    dev.set_data_length(4)
+    dev.bulk_write(struct.pack("<I", value))
+
+
+def apply_gpio_writes(dev: USBDevice, gpio_writes) -> None:
+    """Drive GPIOs as output high/low via the boot ROM, before any SPL.
+
+    gpio_writes: iterable of (port_offset, pin, on) tuples.
+    This is the earliest reachable point in a USB-boot session, so it is
+    used e.g. to assert the PMIC power-hold line so the board stays alive
+    for the whole flash without the operator holding the power button.
+    """
+    for port_offset, pin, on in gpio_writes:
+        base = GPIO_BASE + port_offset
+        bit = 1 << pin
+        port_letter = chr(ord("A") + port_offset // 0x1000)
+        log.info("GPIO poke: P%s%d -> %s (base=0x%08x bit=0x%08x)",
+                 port_letter, pin, "on" if on else "off", base, bit)
+        _poke32(dev, base + 0x18, bit)    # PXINTC  - GPIO mode
+        _poke32(dev, base + 0x24, bit)    # PXMSKS  - GPIO active
+        _poke32(dev, base + 0x38, bit)    # PXPAT1C - output mode
+        _poke32(dev, base + 0x118, bit)   # PXPUENC - pull-up off
+        if on:
+            _poke32(dev, base + 0x44, bit)    # PXPAT0S - drive high
+            _poke32(dev, base + 0x128, bit)   # PXPDENC - pull-down off
+        else:
+            _poke32(dev, base + 0x48, bit)    # PXPAT0C - drive low
+            _poke32(dev, base + 0x124, bit)   # PXPDENS - pull-down on
+
+
 def find_firmware_dir(chip_name: str) -> Path:
     """Locate the bundled firmware directory for a chip."""
     base = chip_name.lower()
@@ -70,11 +120,15 @@ def boot_device(
     spl_path: Path,
     stage2_path: Path,
     wait_time: float = 10.0,
+    gpio_writes=None,
 ) -> USBDevice:
     """Execute the full two-stage boot sequence.
 
     Loads ginfo + SPL via boot ROM, then stage2 via resident SPL.
     Returns the same USBDevice handle with stage2 running.
+
+    gpio_writes, if given, is an iterable of (port_offset, pin, on) tuples
+    driven via the boot ROM before SPL load — the earliest reachable point.
     """
     ginfo_data = ginfo_path.read_bytes()
     spl_data = spl_path.read_bytes()
@@ -83,6 +137,12 @@ def boot_device(
     # Stage 1: ginfo + SPL → DDR init, SPL stays resident
     info = dev.get_cpu_info()
     log.info("Boot ROM CPU info: %s", info.hex())
+
+    # Drive requested GPIOs as early as possible, still in boot-ROM mode.
+    if gpio_writes:
+        log.info("Applying %d GPIO write(s) via boot ROM before SPL load",
+                 len(gpio_writes))
+        apply_gpio_writes(dev, gpio_writes)
 
     log.info("Loading ginfo (%d bytes) to 0x%08x", len(ginfo_data), chip.ginfo_addr)
     dev.set_data_address(chip.ginfo_addr)
@@ -150,11 +210,15 @@ def flash_firmware(
     reboot: bool = True,
     erase_all: bool = False,
     progress_cb=None,
+    gpio_writes=None,
 ) -> None:
     """Flash firmware via the Ingenic USB boot protocol.
 
     fw_dir must contain: ginfo.bin, spl.bin, uboot.bin,
     cfg1_ep0.bin, cfg1_bulk.bin, cfg2_ep0.bin, cfg2_bulk.bin
+
+    gpio_writes, if given, is an iterable of (port_offset, pin, on) tuples
+    driven via the boot ROM before SPL load (e.g. PMIC power-hold).
     """
     # Verify all required files exist
     required = ["ginfo.bin", "spl.bin", "uboot.bin",
@@ -165,7 +229,8 @@ def flash_firmware(
 
     # Boot
     dev = boot_device(dev, chip,
-        fw_dir / "ginfo.bin", fw_dir / "spl.bin", fw_dir / "uboot.bin")
+        fw_dir / "ginfo.bin", fw_dir / "spl.bin", fw_dir / "uboot.bin",
+        gpio_writes=gpio_writes)
 
     # Configure stage2
     log.info("Sending UPDATE_CFG #1")

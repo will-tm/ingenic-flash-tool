@@ -15,6 +15,37 @@ def _parse_addr(s: str) -> int:
     return int(s, 0)
 
 
+def _parse_gpio(specs):
+    """Convert --gpio PORT STATE pairs into (port_offset, pin, on) tuples.
+
+    PORT is like 'PB30' / 'pb30' / 'B30' (port letter A-D + pin 0-31).
+    STATE is on/off (also accepts high/low, 1/0).
+    """
+    out = []
+    for port, state in specs or []:
+        p = port.strip().upper()
+        if p.startswith("P"):
+            p = p[1:]
+        if len(p) < 2 or not p[0].isalpha() or not p[1:].isdigit():
+            raise ValueError(f"Invalid GPIO port {port!r} (expected e.g. PB30)")
+        letter = p[0]
+        pin = int(p[1:])
+        if letter < "A" or letter > "D":
+            raise ValueError(f"Invalid GPIO port {port!r}: port must be A-D")
+        if not 0 <= pin <= 31:
+            raise ValueError(f"Invalid GPIO port {port!r}: pin must be 0-31")
+        st = state.strip().lower()
+        if st in ("on", "high", "1"):
+            on = True
+        elif st in ("off", "low", "0"):
+            on = False
+        else:
+            raise ValueError(f"Invalid GPIO state {state!r} (expected on/off)")
+        port_offset = (ord(letter) - ord("A")) * 0x1000
+        out.append((port_offset, pin, on))
+    return out
+
+
 def _progress_bar(current: int, total: int) -> None:
     pct = current * 100 // total
     filled = 40 * current // total
@@ -90,6 +121,12 @@ def cmd_flash(args: argparse.Namespace) -> int:
         print(str(e), file=sys.stderr)
         return 1
 
+    try:
+        gpio_writes = _parse_gpio(args.gpio)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
     def _wait_msg(elapsed, total):
         sys.stderr.write(f"\rWaiting for device... {int(elapsed)}s/{int(total)}s")
         sys.stderr.flush()
@@ -117,6 +154,7 @@ def cmd_flash(args: argparse.Namespace) -> int:
             reboot=not args.no_reboot,
             erase_all=args.erase_all,
             progress_cb=_progress_bar,
+            gpio_writes=gpio_writes,
         )
         print("Flash complete!")
     except (RuntimeError, FileNotFoundError, TimeoutError) as e:
@@ -137,6 +175,12 @@ def cmd_boot(args: argparse.Namespace) -> int:
         print(str(e), file=sys.stderr)
         return 1
 
+    try:
+        gpio_writes = _parse_gpio(args.gpio)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
     dev = find_device()
     if dev is None:
         print("No Ingenic device found in USB boot mode.", file=sys.stderr)
@@ -153,7 +197,8 @@ def cmd_boot(args: argparse.Namespace) -> int:
                 print(f"Missing: {f}", file=sys.stderr)
                 return 1
 
-        dev = boot_device(dev, chip, ginfo, spl, stage2)
+        dev = boot_device(dev, chip, ginfo, spl, stage2,
+                          gpio_writes=gpio_writes)
         info = dev.get_cpu_info()
         print(f"Device booted into stage2: {info} ({info.hex()})")
     except Exception as e:
@@ -194,6 +239,11 @@ def main() -> int:
     # boot
     p_boot = sub.add_parser("boot", help="Boot device (stage1+stage2) without flashing")
     p_boot.add_argument("chip", help="Chip name (e.g., prj008)")
+    p_boot.add_argument(
+        "--gpio", action="append", nargs=2, metavar=("PORT", "STATE"),
+        help="Drive a GPIO via the boot ROM before SPL load, e.g. "
+             "--gpio PB30 on (repeatable; STATE is on/off)",
+    )
 
     # flash
     p_flash = sub.add_parser("flash", help="Flash firmware to device")
@@ -203,6 +253,12 @@ def main() -> int:
     p_flash.add_argument("--no-reboot", action="store_true", help="Don't reboot after flashing")
     p_flash.add_argument("--erase-all", action="store_true", help="Full chip erase before writing (default: sector erase)")
     p_flash.add_argument("--wait", type=float, default=15.0, help="Seconds to wait for device to appear (default: 15)")
+    p_flash.add_argument(
+        "--gpio", action="append", nargs=2, metavar=("PORT", "STATE"),
+        help="Drive a GPIO via the boot ROM before SPL load, e.g. "
+             "--gpio PB15 on (repeatable; STATE is on/off). Use to assert "
+             "the PMIC power-hold line so the board stays alive during flash.",
+    )
 
     args = parser.parse_args()
 
