@@ -4,7 +4,7 @@ CC      ?= cc
 PKG_CONFIG ?= pkg-config
 CFLAGS  ?= -Os -Wall -Wextra
 CFLAGS  += $(shell $(PKG_CONFIG) --cflags libusb-1.0)
-LDLIBS  += $(shell $(PKG_CONFIG) --libs libusb-1.0)
+LDLIBS  += $(shell $(PKG_CONFIG) --libs libusb-1.0) -lz
 
 ingenic_flash: ingenic_flash.c firmware_blob.h
 	$(CC) $(CFLAGS) -o $@ ingenic_flash.c $(LDLIBS)

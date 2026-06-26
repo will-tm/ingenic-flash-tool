@@ -21,6 +21,7 @@
 #include <unistd.h>
 
 #include <libusb-1.0/libusb.h>
+#include <zlib.h>
 
 #include "firmware_blob.h"
 
@@ -57,6 +58,10 @@
 static libusb_context *ctx;
 static libusb_device_handle *dev;
 
+/* Firmware blobs are stored as one zlib stream in firmware_blob.h and inflated
+ * here once at startup; FW + <NAME>_OFF / <NAME>_LEN index each blob. */
+static unsigned char *FW;
+
 struct gpio_write { uint32_t port_offset; int pin; int on; };
 static struct gpio_write gpios[16];
 static int n_gpios;
@@ -76,6 +81,15 @@ static void die_usb(const char *msg, int rc)
 	if (dev) libusb_close(dev);
 	if (ctx) libusb_exit(ctx);
 	exit(1);
+}
+
+static void unpack_firmware(void)
+{
+	FW = malloc(FW_RAW_LEN);
+	if (!FW) die("out of memory");
+	uLongf out_len = FW_RAW_LEN;
+	int rc = uncompress(FW, &out_len, fw_packed, fw_packed_len);
+	if (rc != Z_OK || out_len != FW_RAW_LEN) die("firmware unpack failed");
 }
 
 /* ---- low-level transfers ------------------------------------------------ */
@@ -270,15 +284,15 @@ static void boot_device(int verbose)
 	/* Drive any requested GPIOs while still in boot-ROM mode, before SPL. */
 	if (n_gpios) apply_gpios(verbose);
 
-	upload(GINFO_ADDR, fw_ginfo, fw_ginfo_len);
-	upload(SPL_ADDR, fw_spl, fw_spl_len);
+	upload(GINFO_ADDR, FW + GINFO_OFF, GINFO_LEN);
+	upload(SPL_ADDR, FW + SPL_OFF, SPL_LEN);
 
 	set_len(D2I_LEN);
 	ctrl_out(VR_PROGRAM_START1, SPL_ADDR >> 16, SPL_ADDR & 0xFFFF, NULL, 0);
 	wait_cpu_info(BOOT_WAIT_MS, "SPL");
 	if (verbose) fprintf(stderr, "SPL up; loading stage2\n");
 
-	upload(STAGE2_ADDR, fw_uboot, fw_uboot_len);
+	upload(STAGE2_ADDR, FW + UBOOT_OFF, UBOOT_LEN);
 	ctrl_out(VR_FLUSH_CACHES, 0, 0, NULL, 0);
 	ctrl_out(VR_PROGRAM_START2, STAGE2_ADDR >> 16, STAGE2_ADDR & 0xFFFF, NULL, 0);
 	wait_cpu_info(BOOT_WAIT_MS, "stage2 burner");
@@ -336,10 +350,11 @@ static int cmd_flash(const char *path, uint32_t offset, int erase_all,
 
 	if (!open_device_wait(wait)) die("no Ingenic device found in USB boot mode");
 
+	unpack_firmware();
 	boot_device(verbose);
 
 	/* cfg #1 (policy) */
-	update_cfg(fw_cfg1_ep0, fw_cfg1_ep0_len, fw_cfg1_bulk, fw_cfg1_bulk_len);
+	update_cfg(FW + CFG1_EP0_OFF, CFG1_EP0_LEN, FW + CFG1_BULK_OFF, CFG1_BULK_LEN);
 
 	/* Read the live JEDEC and pick the matching embedded cfg2. */
 	unsigned char jr[3];
@@ -362,9 +377,11 @@ static int cmd_flash(const char *path, uint32_t offset, int erase_all,
 
 	/* cfg #2 (chip params): sector-erase by default, chip-erase if asked */
 	if (erase_all)
-		update_cfg(fw_cfg2_ep0, fw_cfg2_ep0_len, sel->cfg2_chip, sel->cfg2_chip_len);
+		update_cfg(FW + CFG2_EP0_OFF, CFG2_EP0_LEN,
+			   FW + sel->cfg2_chip_off, sel->cfg2_chip_len);
 	else
-		update_cfg(fw_cfg2_ep0, fw_cfg2_ep0_len, sel->cfg2_sector, sel->cfg2_sector_len);
+		update_cfg(FW + CFG2_EP0_OFF, CFG2_EP0_LEN,
+			   FW + sel->cfg2_sector_off, sel->cfg2_sector_len);
 
 	/* INIT — triggers chip erase when in chip-erase mode; poll the ACK */
 	ctrl_out(VR_INIT, 0, 0, NULL, 0);

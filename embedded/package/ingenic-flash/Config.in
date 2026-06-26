@@ -1,6 +1,7 @@
 config BR2_PACKAGE_INGENIC_FLASH
 	bool "ingenic-flash"
 	select BR2_PACKAGE_LIBUSB
+	select BR2_PACKAGE_ZLIB
 	help
 	  Compact USB-boot flasher for Ingenic T33ZN (T-series) SoCs.
 	  Flashes SPI NOR over the Ingenic USB boot protocol. Board

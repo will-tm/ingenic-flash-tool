@@ -1,15 +1,17 @@
 # ingenic_flash (compact C flasher)
 
 A minimal C reimplementation of `ingenic-flash-tool`'s `detect` and `flash`
-(SPI NOR) paths, sized for an embedded Linux host built with Buildroot. Only
-runtime dependency is **libusb-1.0**. Code is ~350 lines; the binary is ~460 KB,
-almost all of which is the embedded SPL/U-Boot blob.
+(SPI NOR) paths, sized for an embedded Linux host built with Buildroot. Runtime
+dependencies: **libusb-1.0** and **zlib**. Code is ~350 lines; the binary is
+~230 KB — almost all of which is the SPL/U-Boot firmware, stored as a single
+zlib-compressed blob and inflated once at startup.
 
 Scope (by request): **T33ZN only, SPI NOR only.** The board firmware
 (`ginfo`/`spl`/`uboot`), the cfg1/cfg2 payloads, the T-series memory map, and
 the SPI-NOR chip parameters are all baked in at build time from the Python
-tree via `gen_blob.py` into `firmware_blob.h`. Several NOR chips can be embedded
-at once; the tool reads the live JEDEC ID and selects the matching cfg2.
+tree via `gen_blob.py` into `firmware_blob.h` (one packed zlib stream). Several
+NOR chips are embedded at once; the tool reads the live JEDEC ID and selects the
+matching cfg2.
 
 ## Build (host)
 
@@ -36,18 +38,20 @@ full-chip erase first.
 
 ## Targeting NOR chips
 
-By default `gen_blob.py` embeds the **entire** `spiflashinfo.cfg` database
-(every supported vendor/part). The tool reads the live JEDEC at flash time and
-picks the matching embedded cfg2; an unrecognized chip is refused with the list
-of supported IDs. Chips >16 MB automatically get 4-byte-address opcodes.
+By default `gen_blob.py` embeds every chip from these vendors (the `KEEP_MFR`
+set in the script): **Winbond, GigaDevice, XTX, Boya** — 25 chips. The tool
+reads the live JEDEC at flash time and picks the matching embedded cfg2; an
+unrecognized chip is refused with the list of supported IDs. Chips >16 MB
+automatically get 4-byte-address opcodes.
 
 ```sh
-python gen_blob.py            # embed the whole DB (default), then: make
-python gen_blob.py 0xef7018 0xef4020   # or restrict to a subset
+python gen_blob.py            # default KEEP_MFR vendors, then: make
+python gen_blob.py 0xef7018 0xef4020   # or an explicit subset
 ```
 
-Each chip adds ~2 KB. The full DB (~54 chips) costs ~110 KB of binary, on top
-of the ~440 KB shared SPL/U-Boot blob.
+To add/remove vendors, edit `KEEP_MFR` (keyed by JEDEC manufacturer byte).
+Because all blobs share one zlib stream, the near-identical cfg2 configs cost
+almost nothing — adding chips barely changes the binary size.
 
 ## Buildroot integration
 
