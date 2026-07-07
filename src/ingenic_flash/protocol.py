@@ -326,20 +326,14 @@ def flash_firmware(
         write_cmd = struct.pack("<QIIIIII", 0, offset + sent, 0, len(chunk), 0, ops, crc)
         write_cmd = write_cmd.ljust(40, b'\x00')
 
-        t_chunk = time.monotonic()
         dev._dev.ctrl_transfer(0x40, 0x12, 0, 0, write_cmd, timeout=5000)
         dev.bulk_write(chunk)
-        # ACK timeout scales with chunk size: sector erase + program + verify.
-        # ~1-2s typical per 64KB, up to 10s on slow flash.  NOTE: the divisor
-        # is 32*1024 (bytes per 32KB), not 32 -- the old `len(chunk) // 32`
-        # yielded 2_048_000ms (~34min) for a 64KB chunk, so a wedged write
-        # appeared to hang for over half an hour instead of failing.
-        ack_timeout = max(10000, len(chunk) // (32 * 1024) * 1000)  # ~1s per 32KB, min 10s
+        # ACK timeout scales with chunk size: sector erase + program + verify
+        # ~1-2s typical per 64KB, up to 10s on slow flash, 30s safety margin
+        ack_timeout = max(10000, len(chunk) // 32 * 1000)  # ~1s per 32KB, min 10s
         ack = struct.unpack("<i", bytes(
             dev._dev.ctrl_transfer(0xC0, 0x10, 0, 0, 4, timeout=ack_timeout)
         ))[0]
-        log.debug("chunk @0x%08x len=%d ack=%d in %.2fs",
-                  offset + sent, len(chunk), ack, time.monotonic() - t_chunk)
 
         sent += len(chunk)
         if ack != 0:
