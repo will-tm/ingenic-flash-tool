@@ -157,7 +157,7 @@ def cmd_flash(args: argparse.Namespace) -> int:
             gpio_writes=gpio_writes,
         )
         print("Flash complete!")
-    except (RuntimeError, FileNotFoundError, TimeoutError) as e:
+    except (RuntimeError, OSError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
     finally:

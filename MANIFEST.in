@@ -1,0 +1,2 @@
+include tools/bundle_x1600.py
+include tests/test_x1600.py

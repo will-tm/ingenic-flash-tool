@@ -92,6 +92,31 @@ $ ingenic-flash-tool boot prj008
 Device booted into stage2: b'PRJ\x00\x00\x00\x00\x00' (50524a0000000000)
 ```
 
+### Native X1600EN DDR2/64 MiB flashing
+
+The `x1600` bundle contains Ingenic Cloner 2.5.58.2's X1600 SPL and burner,
+plus DDR/UART/SFC configuration for the X1600EN-compatible DDR2/64 MiB profile.
+No external recovery bundle, Linux image, SSH connection, or Cloner installation
+is needed. The native SPL handshake reads its 32-byte SoC response, sends request
+`0x08` to initialize DDR, and waits for the boot ROM before loading the burner:
+
+```bash
+ingenic-flash-tool -v flash x1600 full16mb.bin --no-reboot
+```
+
+This profile requires a complete **16 MiB** SPI NOR backup at offset zero with
+DDR ID `0x00420042` at image offset `0x80`. It is not a generic configuration for
+all X1600 variants or DDR types. The live flash must be a recognized 16 MiB NOR
+chip; unknown JEDEC IDs and incompatible image geometry are refused before erase.
+The burner verifies each 64 KiB write by reading it back. Raw images are written
+without NOR-parameter or DDR-ID injection. A single dynamic-MTD partition covers
+the whole flash; **bootloader and device-specific data are overwritten**.
+
+`firmware/x1600/provenance.cfg` identifies the vendor package and records asset
+SHA-256 hashes. `tools/bundle_x1600.py CLONER_DIRECTORY OUTPUT_DIRECTORY`
+reproduces the bundle from the matching Ingenic package without executing vendor
+host binaries. The T33/PRJ008 configuration path uses its own loader and layout.
+
 ### Show chip info
 
 ```
@@ -109,6 +134,7 @@ Supported chips:
 |----------------|------------|--------|
 | prj008         | SPI NOR    | Full support (T31/T33 camera board) |
 | prj008_mmc0    | eMMC/SD    | Full support (MSC0 slot) |
+| X1600EN DDR2/64 MiB (`x1600`) | SPI NOR | Bundled native burner for full 16 MiB raw images |
 | T20–T41        | —          | Boot only (need board-specific ginfo + config) |
 | 40+ chips      | —          | Bundled SPL/U-Boot for all Ingenic SoCs |
 

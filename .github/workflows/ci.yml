@@ -28,6 +28,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install .
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
       - name: CLI smoke test
         run: |
           ingenic-flash-tool --help

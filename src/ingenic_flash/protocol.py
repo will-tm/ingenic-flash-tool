@@ -94,7 +94,7 @@ def find_firmware_dir(chip_name: str) -> Path:
     )
 
 
-def _wait_for_cpu_info(dev: USBDevice, max_wait: float, what: str) -> bytes:
+def _wait_for_cpu_info(dev: USBDevice, max_wait: float, what: str, info_length: int = 8) -> bytes:
     """Poll GET_CPU_INFO until the device answers or max_wait elapses.
 
     Used after PROGRAM_START1/2 to detect when the next stage (SPL or
@@ -106,7 +106,7 @@ def _wait_for_cpu_info(dev: USBDevice, max_wait: float, what: str) -> bytes:
     last_err: Exception | None = None
     while time.monotonic() < deadline:
         try:
-            return dev.get_cpu_info()
+            return dev.get_cpu_info(info_length)
         except (usb.core.USBError, OSError) as e:
             last_err = e
             time.sleep(0.1)
@@ -137,6 +137,8 @@ def boot_device(
     # Stage 1: ginfo + SPL → DDR init, SPL stays resident
     info = dev.get_cpu_info()
     log.info("Boot ROM CPU info: %s", info.hex())
+    if chip.name == "X1600" and info.rstrip(b"\x00") != b"X1600":
+        raise RuntimeError(f"X1600 profile requires an X1600 boot ROM, got {info!r}")
 
     # Drive requested GPIOs as early as possible, still in boot-ROM mode.
     if gpio_writes:
@@ -160,8 +162,14 @@ def boot_device(
 
     log.info("Waiting up to %.1fs for SPL to init DDR + USB...", wait_time)
     t0 = time.monotonic()
-    info = _wait_for_cpu_info(dev, wait_time, "SPL")
+    # X1600's vendor SPL sends 32 bytes even when wLength requests fewer.
+    info = _wait_for_cpu_info(dev, wait_time, "SPL", info_length=32 if chip.name == "X1600" else 8)
     log.info("SPL running: %s (took %.1fs)", info.hex(), time.monotonic() - t0)
+    if chip.name == "X1600":
+        log.info("Starting X1600 DDR initialization (SPL request 0x08)")
+        dev.start_ddr()
+        info = _wait_for_cpu_info(dev, wait_time, "X1600 DDR init / boot ROM")
+        log.info("DDR initialized; boot ROM CPU info: %s", info.hex())
 
     # Stage 2: load burner into DRAM via SPL
     log.info("Loading stage2 (%d bytes) to 0x%08x", len(stage2_data), chip.stage2_addr)
@@ -227,6 +235,13 @@ def flash_firmware(
         if not (fw_dir / f).exists():
             raise FileNotFoundError(f"Missing {f} in {fw_dir}")
 
+    native_x1600 = chip.name == "X1600"
+    fw_data = None
+    if native_x1600:
+        from .x1600 import validate_image
+        fw_data = firmware_path.read_bytes()
+        validate_image(fw_data, offset)
+
     # Boot
     dev = boot_device(dev, chip,
         fw_dir / "ginfo.bin", fw_dir / "spl.bin", fw_dir / "uboot.bin",
@@ -257,24 +272,31 @@ def flash_firmware(
     if chip_def is not None:
         log.info("Recognized %s (%d MB) from chip database",
                  chip_def.name, chip_def.size // (1024 * 1024))
-        cfg2_bulk = patch_cfg2(cfg2_bulk, chip_def)
+    if native_x1600:
+        from .x1600 import make_cfg2, update_command
+        if chip_def is None:
+            raise RuntimeError(f"Unknown X1600 SPI NOR JEDEC 0x{jedec_id:06x}; refusing to erase")
+        cfg2_bulk = make_cfg2(chip_def, erase_all=erase_all)
+        cfg2_ep0 = update_command(cfg2_bulk)
     else:
-        log.warning("JEDEC 0x%06x not in chip database — using bundled cfg as-is",
-                    jedec_id)
+        if chip_def is not None:
+            cfg2_bulk = patch_cfg2(cfg2_bulk, chip_def)
+        else:
+            log.warning("JEDEC 0x%06x not in chip database — using bundled cfg as-is",
+                        jedec_id)
+        if not erase_all:
+            cfg2_bulk = _patch_sfc_erase_mode(cfg2_bulk, 0)
+        cfg2_ep0 = (fw_dir / "cfg2_ep0.bin").read_bytes()
 
-    if erase_all:
-        log.info("Sending UPDATE_CFG #2 (chip erase mode)")
-    else:
-        cfg2_bulk = _patch_sfc_erase_mode(cfg2_bulk, 0)
-        log.info("Sending UPDATE_CFG #2 (sector erase mode)")
-    dev.stage2_update_cfg(
-        (fw_dir / "cfg2_ep0.bin").read_bytes(), cfg2_bulk)
+    log.info("Sending UPDATE_CFG #2 (%s erase mode)", "chip" if erase_all else "sector")
+    dev.stage2_update_cfg(cfg2_ep0, cfg2_bulk)
     ack = struct.unpack("<i", dev.stage2_get_ack())[0]
     if ack != 0:
         raise RuntimeError(f"UPDATE_CFG #2 failed: {ack}")
 
     # Init (triggers chip erase if --erase-all)
-    fw_data = firmware_path.read_bytes()
+    if fw_data is None:
+        fw_data = firmware_path.read_bytes()
     total = len(fw_data)
 
     if erase_all:

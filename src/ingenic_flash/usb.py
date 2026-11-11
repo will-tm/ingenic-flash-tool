@@ -18,6 +18,7 @@ VR_SET_DATA_LENGTH = 0x02
 VR_FLUSH_CACHES = 0x03
 VR_PROGRAM_START1 = 0x04
 VR_PROGRAM_START2 = 0x05
+VR_START_DDR = 0x08  # X1600 vendor SPL: leave its USB handshake loop and initialize DDR
 
 # Stage2 (burner) vendor requests
 VR_GET_ACK = 0x10
@@ -98,9 +99,9 @@ class USBDevice:
 
     # --- Boot ROM vendor requests ---
 
-    def get_cpu_info(self) -> bytes:
+    def get_cpu_info(self, length: int = 8) -> bytes:
         return bytes(self._dev.ctrl_transfer(
-            REQTYPE_IN, VR_GET_CPU_INFO, 0, 0, 8, timeout=CTRL_TIMEOUT))
+            REQTYPE_IN, VR_GET_CPU_INFO, 0, 0, length, timeout=CTRL_TIMEOUT))
 
     def set_data_address(self, addr: int) -> None:
         wval, widx = _split_addr(addr)
@@ -125,6 +126,11 @@ class USBDevice:
         wval, widx = _split_addr(entry)
         self._dev.ctrl_transfer(
             REQTYPE_OUT, VR_PROGRAM_START2, wval, widx, b"", timeout=CTRL_TIMEOUT)
+
+    def start_ddr(self) -> None:
+        """Release the X1600 vendor SPL's pre-DDR USB handshake loop."""
+        self._dev.ctrl_transfer(
+            REQTYPE_OUT, VR_START_DDR, 0, 0, b"", timeout=CTRL_TIMEOUT)
 
     # --- Bulk transfers ---
 

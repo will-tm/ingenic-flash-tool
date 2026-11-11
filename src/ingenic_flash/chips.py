@@ -23,7 +23,7 @@ USB_PIDS = {
     0x4785: "JZ4785",
     0x1000: "X1000",
     0xC309: "T-series",
-    0xEAEF: "X2000",
+    0xEAEF: "X2000/X1600",
 }
 
 # Memory map groups (derived from firmware config.cfg files)
@@ -73,7 +73,7 @@ CHIPS = {
     "x1500":     ChipInfo("X1500", 0xF4001000, 0xF4001800, 0x80100000, 0x7000, 0x1000),
     "x1520":     ChipInfo("X1520", 0x80001000, 0x80001800, 0x80100000, 0x7000, 0x1000),
     "x1521":     ChipInfo("X1521", *_T_SERIES),
-    "x1600":     ChipInfo("X1600", *_T_SERIES),
+    "x1600":     ChipInfo("X1600", 0x80001000, 0x80001800, 0x80100000, 0x7000, 0xEAEF),
     "x1630":     ChipInfo("X1630", 0x80001000, 0x80001800, 0x80100000, 0x7000, 0xC309),
     "x1800":     ChipInfo("X1800", 0x80001000, 0x80001800, 0x80100000, 0x7000, 0xC309),
     "x1830":     ChipInfo("X1830", 0x80001000, 0x80001800, 0x80100000, 0x7000, 0xC309),
